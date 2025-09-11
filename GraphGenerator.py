@@ -1,4 +1,5 @@
 import json
+import pandas as pd
 import plotly.express as px
 from LLMResponseGenerator import call_llm
 
@@ -16,11 +17,29 @@ def get_graph_metadata_from_llm(prompt: str) -> dict:
 
 # Plot graph according to result by LLM
 def plot_graph(df, metadata):
+    """
+    Plot a graph using Plotly based on LLM-provided metadata.
+
+    Args:
+        df (pd.DataFrame | list[dict]): Input data.
+        metadata (dict): Instructions from LLM, e.g.
+            {
+                "graph_type": "bar",
+                "x": "column_x",
+                "y": "column_y",
+                "title": "My Chart"
+            }
+    """
+    # Ensure df is a pandas DataFrame
+    if not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame(df)
+
     graph_type = metadata["graph_type"].lower()
     x_col = metadata["x"]
     y_col = metadata.get("y", None)
     title = metadata.get("title", "")
 
+    # Select plot type
     if graph_type == "line":
         fig = px.line(df, x=x_col, y=y_col, title=title)
     elif graph_type == "bar":

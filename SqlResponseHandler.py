@@ -3,6 +3,9 @@ import duckdb
 import sqlglot
 from langfuse import get_client
 from LLMResponseGenerator import call_llm
+from LLMPrompts import generate_dtype_prompt
+from dataLoad import generate_dtype_prompt, parse_llm_dtype_response, parse_dtype_dict_to_pandas_dtypes
+import pandas as pd
 
 langfuse = get_client()
 
@@ -23,20 +26,6 @@ def get_sql_query_from_llm(prompt: str) -> str:
 
     return sql_query
 
-
-# # Parse the LLM response received and collect the required SQL query
-# def parse_llm_response(full_answer: str) -> str:
-#     try:
-#         parsed = json.loads(full_answer)
-#         generated_sql = parsed.get("sql_query")
-#         print("\nGenerated SQL query: " + generated_sql )
-#         if not generated_sql:
-#             raise ValueError("Missing 'sql_query' in LLM response.")
-#         return generated_sql
-#     except json.JSONDecodeError:
-#         raise ValueError("Failed to parse LLM response as JSON.")
-
-
 # Validate sql received from LLM response using sqlglot
 def validate_and_normalize_sql(sql_query: str) -> str:
     try:
@@ -56,18 +45,44 @@ def validate_and_normalize_sql(sql_query: str) -> str:
         raise ValueError(f"SQL validation failed: {str(e)}")
 
 
-# Executes the validated sql on db
-def execute_sql(sql_query: str) -> list:
+def execute_sql(sql_query: str) -> pd.DataFrame:
+    """
+    Executes the validated SQL on DuckDB, infers datatypes using LLM,
+    and returns the result as a DataFrame with appropriate dtypes.
+    """
     try:
-        # Execute the query on the existing DuckDB connection
+        # Execute the query
         result = conn.execute(sql_query).fetchall()
 
         # Get column names
-        columns = [desc[0] for desc in conn.description]
+        columns = [desc[0] for desc in conn.cursor().description]
 
         # Convert result into list of dicts
         result_dicts = [dict(zip(columns, row)) for row in result]
-        return result_dicts
+
+        # Prepare a sample row for LLM dtype inference
+        sample_row = result_dicts[0] if result_dicts else {col: None for col in columns}
+
+        # Generate prompt using external utility
+        prompt = generate_dtype_prompt(sample_row, table_name="sql_result")
+
+        # Call the LLM to infer datatypes
+        llm_response = call_llm(prompt, span_name="infer_sql_result_types", external_id="sql_result")
+
+        # Reuse helper to parse LLM response into pandas dtype map and datetime columns
+        pandas_dtype_map, parse_dates = parse_dtype_dict_to_pandas_dtypes(llm_response)
+
+        # Create DataFrame with inferred dtypes
+        df = pd.DataFrame(result_dicts)
+        for col, pd_dtype in pandas_dtype_map.items():
+            df[col] = df[col].astype(pd_dtype)
+        for col in parse_dates:
+            df[col] = pd.to_datetime(df[col], errors='coerce')
+
+        return df
 
     except Exception as e:
         raise ValueError(f"SQL execution failed: {str(e)}")
+
+
+
