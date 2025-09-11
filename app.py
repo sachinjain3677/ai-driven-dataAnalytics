@@ -1,20 +1,38 @@
 import json
 from fastapi import FastAPI, Request
-from dataLoad import get_schema_text, get_samples_text
+from dataLoad import connect_to_duckdb, load_csvs, clean_loaded_data, load_data_into_duckdb, get_schema_text, get_samples_text
 from LLMPrompts import *
 from SqlResponseHandler import *
 from GraphGenerator import *
 
 app = FastAPI()
 
+schema_text = None
+samples_text = None
+
+@app.on_event("startup")
+async def startup_event():
+    global schema_text, samples_text
+    # Code here runs once, when the server starts
+    print("Server is starting...")
+    # Connect to DuckDB
+    connect_to_duckdb()
+    # Loading Data from CSV
+    load_csvs()
+    # Clean loaded dataLoad
+    clean_loaded_data()
+    #Load Data into DuckDB
+    load_data_into_duckdb()
+    # Define schema_text and samples_text (hardcoded for now)
+    schema_text = get_schema_text()
+    samples_text = get_samples_text()
+
 @app.post("/generate_sql")
 async def generate_sql(request: Request):
     body = await request.json()
     user_query = body.get("query")  # Natural language query
 
-    # Define schema_text and samples_text (hardcoded for now)
-    schema_text = get_schema_text()
-    samples_text = get_samples_text()
+
 
     # Build the full prompt
     prompt = get_sql_prompt(schema_text, samples_text, user_query)
