@@ -5,7 +5,7 @@ from sentence_transformers import SentenceTransformer
 # ------------------------------
 # 1. Load dataset
 # ------------------------------
-csv_path = "orders.csv"
+csv_path = "dataset/orders.csv"
 orders_df = pd.read_csv(csv_path)
 
 # Clean column names

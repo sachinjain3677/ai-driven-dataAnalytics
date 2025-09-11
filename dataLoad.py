@@ -6,9 +6,9 @@ import duckdb
 conn = duckdb.connect('my_data.duckdb')
 
 # Load your tables
-orders_df = pd.read_csv("orders.csv")
-employees_df = pd.read_csv("employees.csv")
-customers_df = pd.read_csv("customers.csv")
+orders_df = pd.read_csv("dataset/orders.csv")
+employees_df = pd.read_csv("dataset/employees.csv")
+customers_df = pd.read_csv("dataset/customers.csv")
 
 # Clean column names
 def clean_columns(df):
