@@ -1,14 +1,8 @@
 import json
 import duckdb
 import sqlglot
-import os
-import requests
 from langfuse import get_client
-
-# Set Langfuse credentials
-os.environ["LANGFUSE_SECRET_KEY"] = "sk-lf-391f193d-c128-4eb7-a2a4-643fdccb6fa7"
-os.environ["LANGFUSE_PUBLIC_KEY"] = "pk-lf-9c772c3f-4c63-4887-8df0-41e88747854c"
-os.environ["LANGFUSE_HOST"] = "https://cloud.langfuse.com"
+from LLMResponseGenerator import call_llm
 
 langfuse = get_client()
 
@@ -16,48 +10,31 @@ langfuse = get_client()
 conn = duckdb.connect('my_data.duckdb')
 
 # Send prompt to LLM to get response
-def get_llm_response(prompt: str) -> str:
-    full_answer = ""
-    external_id = "request_12345"
-    trace_id = langfuse.create_trace_id(seed=external_id)
+def get_sql_query_from_llm(prompt: str) -> str:
+    raw_response = call_llm(prompt, span_name="ollama_generate_sql", external_id="request_12345")
 
-    with langfuse.start_as_current_span(
-            name="ollama_generate",
-            input={"prompt": prompt},
-            trace_context={"trace_id": trace_id}
-    ) as span:
-        response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={"model": "mistral", "prompt": prompt},
-            stream=True
-        )
-
-        for line in response.iter_lines():
-            if line:
-                raw = line.decode("utf-8")
-                try:
-                    data = json.loads(raw)
-                    if "response" in data:
-                        full_answer += data["response"]
-                except json.JSONDecodeError:
-                    span.update(metadata={"json_decode_error": raw})
-
-        span.update(output={"generated_sql": full_answer.strip()})
-
-    return full_answer.strip()
-
-
-# Parse the LLM response received and collect the required SQL query
-def parse_llm_response(full_answer: str) -> str:
     try:
-        parsed = json.loads(full_answer)
-        generated_sql = parsed.get("sql_query")
-        print("\nGenerated SQL query: " + generated_sql )
-        if not generated_sql:
-            raise ValueError("Missing 'sql_query' in LLM response.")
-        return generated_sql
+        parsed = json.loads(raw_response)
+        sql_query = parsed.get("sql_query")
+        if not sql_query:
+            raise ValueError("SQL query key not found in LLM response JSON.")
     except json.JSONDecodeError:
-        raise ValueError("Failed to parse LLM response as JSON.")
+        raise ValueError(f"Failed to parse LLM response as JSON:\n{raw_response}")
+
+    return sql_query
+
+
+# # Parse the LLM response received and collect the required SQL query
+# def parse_llm_response(full_answer: str) -> str:
+#     try:
+#         parsed = json.loads(full_answer)
+#         generated_sql = parsed.get("sql_query")
+#         print("\nGenerated SQL query: " + generated_sql )
+#         if not generated_sql:
+#             raise ValueError("Missing 'sql_query' in LLM response.")
+#         return generated_sql
+#     except json.JSONDecodeError:
+#         raise ValueError("Failed to parse LLM response as JSON.")
 
 
 # Validate sql received from LLM response using sqlglot
