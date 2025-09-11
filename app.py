@@ -18,11 +18,9 @@ async def generate_sql(request: Request):
 
     # Build the full prompt
     prompt = get_sql_prompt(schema_text, samples_text, user_query)
-    full_answer = get_llm_response(prompt)
+    generated_sql = get_sql_query_from_llm(prompt)
 
     try:
-        print("\n answer by llm : " + full_answer)
-        generated_sql = parse_llm_response(full_answer)
         print("\n generated sql : " + generated_sql)
         validated_sql = validate_and_normalize_sql(generated_sql)
         query_results = execute_sql(validated_sql)
@@ -32,7 +30,7 @@ async def generate_sql(request: Request):
         graph_prompt = create_graph_prompt(schema_text, samples_text, user_query)
         print("\n Graph prompt : " + graph_prompt)
         # Get graph metadata
-        metadata = get_graph_metadata_ollama_multitable(graph_prompt)
+        metadata = get_graph_metadata_from_llm(graph_prompt)
         # Plot the graph
         print("\n Plotting ... ")
         fig = plot_graph(query_results, metadata)
