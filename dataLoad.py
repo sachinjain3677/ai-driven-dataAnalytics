@@ -4,7 +4,7 @@
 import pandas as pd
 import duckdb
 import json
-import datetime
+from datetime import datetime
 from typing import Dict
 
 # Import the LLM utility from your other file
@@ -65,10 +65,15 @@ def parse_llm_dtype_response(llm_response: str) -> dict:
             dtype_mapping_dict[col.strip()] = dtype.strip()
     return dtype_mapping_dict
 
+# Global dictionary to persist column -> original dtype mapping
+GLOBAL_DTYPE_DICT = {}
+
 def parse_dtype_dict_to_pandas_dtypes(dtype_dict: dict) -> tuple[dict, list]:
     """
     Converts a dictionary of column_name -> dtype (from LLM or other source)
     into a pandas dtype mapping and list of datetime columns.
+    Also stores the original column -> dtype mapping in GLOBAL_DTYPE_DICT
+    for future reference.
 
     Args:
         dtype_dict (dict): {column_name: dtype_string}
@@ -77,30 +82,56 @@ def parse_dtype_dict_to_pandas_dtypes(dtype_dict: dict) -> tuple[dict, list]:
         pandas_dtype_map (dict): column -> pandas dtype (Int64, float, string)
         parse_dates (list): list of columns to parse as datetime
     """
-    parse_dates = []
+    global GLOBAL_DTYPE_DICT
+    print(f"[INFO] Parsing dtype dictionary: {dtype_dict}")
 
+    # Persist original mapping
+    GLOBAL_DTYPE_DICT.update(dtype_dict)
+    print(f"[INFO] Updated GLOBAL_DTYPE_DICT: {GLOBAL_DTYPE_DICT}")
+
+    parse_dates = []
     pandas_dtype_map = {}
+
     for col, dtype_val in dtype_dict.items():
         dtype_val_lower = dtype_val.lower()
+        print(f"[DEBUG] Processing column '{col}' with dtype '{dtype_val_lower}'")
+
         if dtype_val_lower in ["int", "integer"]:
             pandas_dtype_map[col] = "Int64"
+            print(f"[INFO] Mapped column '{col}' -> Int64")
         elif dtype_val_lower in ["float", "double"]:
             pandas_dtype_map[col] = "float"
+            print(f"[INFO] Mapped column '{col}' -> float")
         elif dtype_val_lower in ["str", "string", "object"]:
             pandas_dtype_map[col] = "string"
+            print(f"[INFO] Mapped column '{col}' -> string")
         elif dtype_val_lower in ["datetime", "datetime64"]:
             parse_dates.append(col)
+            print(f"[INFO] Column '{col}' marked for datetime parsing")
         else:
-            pandas_dtype_map[col] = "string"  # fallback
+            pandas_dtype_map[col] = "string"
+            print(f"[WARN] Unknown dtype '{dtype_val}' for column '{col}', defaulting to string")
+
+    print(f"[INFO] Final pandas dtype map: {pandas_dtype_map}")
+    print(f"[INFO] Datetime columns: {parse_dates}")
 
     return pandas_dtype_map, parse_dates
+
+
 
 # -------------------------
 # Load CSV with LLM-inferred dtypes and return a DataFrame
 # -------------------------
+def print_dict_items(d: dict[str, str]) -> None:
+    """Prints key-value pairs from a dictionary."""
+    for key, value in d.items():
+        print(f"{key}: {value}")
+
 def load_csv_with_llm_dtypes(csv_path: str, table_name: str) -> pd.DataFrame:
     # Step 1: Call LLM to infer datatypes
     dtype_dict = infer_dtypes_from_csv(csv_path, table_name)
+    print(f"dtypes fetched for table: {table_name} from llm")
+    print_dict_items(dtype_dict)
 
     # Step 2: Parse LLM response into pandas dtype mapping
     pandas_dtype_map, parse_dates = parse_dtype_dict_to_pandas_dtypes(dtype_dict)
@@ -110,7 +141,9 @@ def load_csv_with_llm_dtypes(csv_path: str, table_name: str) -> pd.DataFrame:
         csv_path,
         dtype=pandas_dtype_map,
         parse_dates=parse_dates,
-        date_parser=lambda x: datetime.strptime(x, date_format)
+        date_parser=lambda x: (
+            datetime.strptime(str(x), "%m/%d/%Y %I:%M:%S %p") if pd.notnull(x) else pd.NaT
+        )
     )
 
     # Step 4: Clean column names
@@ -118,6 +151,7 @@ def load_csv_with_llm_dtypes(csv_path: str, table_name: str) -> pd.DataFrame:
 
     print(table_name, "\n", df.head())
     return df
+
 
 # -------------------------
 # Helper to map pandas dtype to DuckDB type
@@ -150,10 +184,13 @@ def table_exists(con, table_name: str) -> bool:
 # -------------------------
 def create_table_with_llm_dtypes(df: pd.DataFrame, table_name: str):
     if table_exists(conn, table_name):
-        print(f"Table '{table_name}' already exists.")
-        return
+        print(f"Table '{table_name}' already exists, dropping from db")
+        conn.execute(f"DROP TABLE {table_name}")
 
     # Use the DataFrame's dtypes (already LLM-inferred) to map to DuckDB types
+    print("printing col and dtypes for table: ", table_name)
+    col_dtypes = [f"{col} {dtype}" for col, dtype in df.dtypes.items()]
+    print(col_dtypes)
     cols = [f"{col} {pandas_dtype_to_duckdb(str(dtype))}" for col, dtype in df.dtypes.items()]
     ddl = f"CREATE TABLE {table_name} ({', '.join(cols)})"
     conn.execute(ddl)
@@ -176,9 +213,9 @@ def load_data_into_duckdb_with_llm():
     customers_df = load_csv_with_llm_dtypes(customers_csv_path, "customers")
 
     # Step 2: Create tables in DuckDB using LLM-inferred dtypes
-    create_table_with_llm_dtypes(orders_df, "orders")
-    create_table_with_llm_dtypes(employees_df, "employees")
-    create_table_with_llm_dtypes(customers_df, "customers")
+#     create_table_with_llm_dtypes(orders_df, "orders")
+#     create_table_with_llm_dtypes(employees_df, "employees")
+#     create_table_with_llm_dtypes(customers_df, "customers")
 
 # -------------------------
 # Utility functions: fetch schemas and sample rows
@@ -233,7 +270,7 @@ def get_top_rows(n: int = 5) -> dict:
 # """
 #
 # # Tokenize input and generate output
-# print("\n Tokeninzing")
+# print("\n Tokenizing")
 # inputs = tokenizer(prompt, return_tensors="pt")
 #
 # # Start clock

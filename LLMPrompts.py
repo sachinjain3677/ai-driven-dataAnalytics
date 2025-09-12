@@ -7,8 +7,13 @@ def generate_dtype_prompt(first_row: dict, table_name: str) -> str:
     """Generate a prompt for the LLM to infer column datatypes from the first row."""
     return (
         f"Given the first row of a CSV for table '{table_name}', "
-        f"suggest the most relevant Python/pandas datatype for each column. "
-        f"Respond in the format 'column_name: datatype'.\n\n"
+        f"suggest the most relevant Python/pandas datatype for each column.\n\n"
+        f"Important instructions:\n"
+        f"- Respond ONLY with one column per line.\n"
+        f"- Format: column_name: datatype\n"
+        f"- Do not include explanations, extra text, or JSON.\n"
+        f"- Use only these datatypes: int, float, string, datetime.\n\n"
+        f"- datatype for POSTALCODE is always string\n\n"
         f"Row sample: {json.dumps(first_row, indent=2)}"
     )
 
@@ -38,7 +43,6 @@ def get_sql_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
     }}
     """
 
-
 # LLM Prompt to predict graph type according to user query, sample data and dataset schema
 def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
     prompt = f"""
@@ -52,10 +56,16 @@ def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) ->
 
         User query: "{user_query}"
 
-        Instructions:
-        - Select only one of these graph types exactly: "Line", "Bar", "Pie", "Scatter", "Histogram".
+        Instructions (STRICT):
+        - Select only one of these graph types: "Line", "Bar", "Pie", "Scatter", "Histogram".
         - Use only column names from the schema provided.
-        - Respond ONLY in valid JSON format, with these exact keys and types:
+        - Respond ONLY with a single valid JSON object, nothing else.
+        - DO NOT include explanations, natural language, markdown, code fences, or comments.
+        - DO NOT invent additional keys or change key names.
+        - DO NOT add any prefixes like "Here is the JSON".
+        - The output must be directly parsable by `json.loads`.
+
+        The JSON object must have exactly these keys:
 
         {{
           "graph_type": "Line" | "Bar" | "Pie" | "Scatter" | "Histogram",
@@ -64,18 +74,14 @@ def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) ->
           "title": "string"
         }}
 
-        - Do NOT provide any explanation, commentary, or anything else.
-        - Do NOT use any graph type names other than the ones explicitly listed.
-        - Do NOT use additional qualifiers like "Filtered Bar" or "Grouped Histogram".
-        - Output ONLY the valid JSON object, with no code fences, no examples, nothing else.
-
         Example of correct output:
 
         {{
-            "graph_type": "Bar",
-            "x": "shipcountry",
-            "y": "freight",
-            "title": "Freight Details of Orders Shipped to Germany in 1995"
+          "graph_type": "Bar",
+          "x": "shipcountry",
+          "y": "freight",
+          "title": "Freight Details of Orders Shipped to Germany in 1995"
         }}
         """
     return prompt
+

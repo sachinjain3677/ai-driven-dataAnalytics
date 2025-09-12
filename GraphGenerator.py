@@ -5,15 +5,36 @@ from LLMResponseGenerator import call_llm
 
 # Get LLM to decide what kind of graph to be made for the usecase
 def get_graph_metadata_from_llm(prompt: str) -> dict:
-    raw_response = call_llm(prompt, span_name="ollama_generate_graph", external_id="graph_request_12345")
+    """
+    Send a prompt to the LLM to decide graph metadata and parse the JSON response.
+
+    Args:
+        prompt (str): Prompt describing the graph requirements.
+
+    Returns:
+        dict: Graph metadata (graph_type, x, y, title, etc.)
+    """
+    print("[INFO] Requesting graph metadata from LLM")
+    print(f"[DEBUG] Prompt sent to LLM:\n{prompt}")
+
+    raw_response = call_llm(
+        prompt,
+        span_name="ollama_generate_graph",
+        external_id="graph_request_12345"
+    )
+
+    print(f"[INFO] Raw LLM response received (length={len(raw_response)} chars)")
+    print(f"[DEBUG] Raw LLM response:\n{raw_response}")
 
     try:
         metadata = json.loads(raw_response)
-    except json.JSONDecodeError:
+        print("[INFO] Successfully parsed LLM response into metadata")
+        print(f"[DEBUG] Parsed metadata: {metadata}")
+    except json.JSONDecodeError as e:
+        print(f"[EXCEPTION] Failed to parse LLM response as JSON: {e}")
         raise ValueError(f"Could not parse graph metadata JSON:\n{raw_response}")
 
     return metadata
-
 
 # Plot graph according to result by LLM
 def plot_graph(df, metadata):
@@ -30,14 +51,23 @@ def plot_graph(df, metadata):
                 "title": "My Chart"
             }
     """
+    print("[INFO] Starting plot_graph")
+    print(f"[DEBUG] Metadata received: {metadata}")
+
     # Ensure df is a pandas DataFrame
     if not isinstance(df, pd.DataFrame):
+        print("[INFO] Converting input data to pandas DataFrame")
         df = pd.DataFrame(df)
+
+    print(f"[DEBUG] DataFrame shape: {df.shape}")
+    print(f"[DEBUG] DataFrame columns: {list(df.columns)}")
 
     graph_type = metadata["graph_type"].lower()
     x_col = metadata["x"]
     y_col = metadata.get("y", None)
     title = metadata.get("title", "")
+
+    print(f"[INFO] Graph type: {graph_type}, X: {x_col}, Y: {y_col}, Title: '{title}'")
 
     # Select plot type
     if graph_type == "line":
@@ -51,7 +81,9 @@ def plot_graph(df, metadata):
     elif graph_type == "histogram":
         fig = px.histogram(df, x=x_col, title=title)
     else:
+        print(f"[EXCEPTION] Unsupported graph type: {graph_type}")
         raise ValueError(f"Unsupported graph type: {graph_type}")
 
+    print("[INFO] Plot created successfully, displaying graph")
     fig.show()
     return fig
