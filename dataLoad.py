@@ -20,6 +20,10 @@ employees_df = None
 customers_df = None
 date_format = "%m/%d/%Y %I:%M:%S %p"  # adjust to match your CSV format - assumption for user csv data format
 
+orders_csv_path = "dataset/orders.csv"
+employees_csv_path = "dataset/employees.csv"
+customers_csv_path = "dataset/customers.csv"
+
 # -------------------------
 # Database connection
 # -------------------------
@@ -163,12 +167,13 @@ def create_table_with_llm_dtypes(df: pd.DataFrame, table_name: str):
 # -------------------------
 def load_data_into_duckdb_with_llm():
     global orders_df, employees_df, customers_df
+    global orders_csv_path, employees_csv_path, customers_csv_path
     print("Loading CSVs into DuckDB with LLM-inferred datatypes...")
 
     # Step 1: Load CSVs using LLM dtypes
-    orders_df = load_csv_with_llm_dtypes("orders.csv", "orders")
-    employees_df = load_csv_with_llm_dtypes("employees.csv", "employees")
-    customers_df = load_csv_with_llm_dtypes("customers.csv", "customers")
+    orders_df = load_csv_with_llm_dtypes(orders_csv_path, "orders")
+    employees_df = load_csv_with_llm_dtypes(employees_csv_path, "employees")
+    customers_df = load_csv_with_llm_dtypes(customers_csv_path, "customers")
 
     # Step 2: Create tables in DuckDB using LLM-inferred dtypes
     create_table_with_llm_dtypes(orders_df, "orders")
