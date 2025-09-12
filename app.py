@@ -39,7 +39,6 @@ async def generate_sql(request: Request):
         print("\n generated sql : " + generated_sql)
         validated_sql = validate_and_normalize_sql(generated_sql)
         query_results = execute_sql(validated_sql)
-        print("[DEBUG] Query results dataframe: ", query_results.head())
 
         print("\n Fetching kind of graph to plot")
         # Create prompt for getting graph type and axis details
