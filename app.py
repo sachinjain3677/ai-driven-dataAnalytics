@@ -61,6 +61,9 @@ def convert_to_wav(audio_bytes: bytes) -> BytesIO:
         raise RuntimeError(f"ffmpeg error: {process.stderr.decode()}")
     return BytesIO(process.stdout)
 
+#####################################
+# Speech to text API
+#####################################
 @app.post("/generate_sql_from_audio")
 async def generate_sql_from_audio(audio: UploadFile = File(...)):
     try:
