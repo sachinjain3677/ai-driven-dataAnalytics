@@ -31,7 +31,9 @@ def get_sql_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
     - You can directly use date/time functions (YEAR(), MONTH(), DAY(), comparisons) on DATE/TIMESTAMP columns.
     - Use ISO-standard date literals in the format 'YYYY-MM-DD' when filtering or comparing DATE/TIMESTAMP values.
     - Do not attempt to parse or cast columns like `orderdate` manually — they are already stored as proper DATE/TIMESTAMP types.
+    - Only use columns that exist in the schema provided above.
     - Always generate syntactically valid DuckDB SQL.
+    - Ensure the SELECT clause includes only columns from the schema.
 
     Generate an appropriate DuckDB-compatible SQL query for this natural language request:
     {user_query}
@@ -42,6 +44,7 @@ def get_sql_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
         "explanation": "A brief explanation of the query"
     }}
     """
+
 
 # LLM Prompt to predict graph type according to user query, sample data and dataset schema
 def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
@@ -57,6 +60,7 @@ def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) ->
         User query: "{user_query}"
 
         Instructions (STRICT):
+        - If the user_query explicitly mentions a graph type (Line, Bar, Pie, Scatter, Histogram), give it highest priority.
         - Select only one of these graph types: "Line", "Bar", "Pie", "Scatter", "Histogram".
         - Use only column names from the schema provided.
         - Respond ONLY with a single valid JSON object, nothing else.
@@ -64,6 +68,7 @@ def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) ->
         - DO NOT invent additional keys or change key names.
         - DO NOT add any prefixes like "Here is the JSON".
         - The output must be directly parsable by `json.loads`.
+        - None of the columns (x or y) can be null or None, except for "Histogram" which only requires the "x" column.
 
         The JSON object must have exactly these keys:
 
@@ -84,4 +89,5 @@ def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) ->
         }}
         """
     return prompt
+
 

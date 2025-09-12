@@ -15,7 +15,6 @@ def get_graph_metadata_from_llm(prompt: str) -> dict:
         dict: Graph metadata (graph_type, x, y, title, etc.)
     """
     print("[INFO] Requesting graph metadata from LLM")
-    print(f"[DEBUG] Prompt sent to LLM:\n{prompt}")
 
     raw_response = call_llm(
         prompt,
@@ -52,6 +51,23 @@ def plot_graph(df, metadata):
             }
     """
     print("[INFO] Starting plot_graph")
+
+
+    # Save current options
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.max_colwidth', None)
+
+    # Print the entire DataFrame
+    print(df)
+
+    # Reset options to default (optional)
+    pd.reset_option('display.max_rows')
+    pd.reset_option('display.max_columns')
+    pd.reset_option('display.width')
+    pd.reset_option('display.max_colwidth')
+
     print(f"[DEBUG] Metadata received: {metadata}")
 
     # Ensure df is a pandas DataFrame

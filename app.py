@@ -39,11 +39,11 @@ async def generate_sql(request: Request):
         print("\n generated sql : " + generated_sql)
         validated_sql = validate_and_normalize_sql(generated_sql)
         query_results = execute_sql(validated_sql)
+        print("[DEBUG] Query results dataframe: ", query_results.head())
 
         print("\n Fetching kind of graph to plot")
         # Create prompt for getting graph type and axis details
         graph_prompt = create_graph_prompt(", ".join(query_results.columns), query_results.head(3).to_string(index=False), user_query)
-        print("\n Graph prompt : " + graph_prompt)
         # Get graph metadata
         metadata = get_graph_metadata_from_llm(graph_prompt)
         # Plot the graph
