@@ -2,6 +2,7 @@ import json
 import pandas as pd
 import plotly.express as px
 from LLMResponseGenerator import call_llm
+from plotly.graph_objs import Figure
 
 # Get LLM to decide what kind of graph to be made for the usecase
 def get_graph_metadata_from_llm(prompt: str) -> dict:
@@ -36,7 +37,7 @@ def get_graph_metadata_from_llm(prompt: str) -> dict:
     return metadata
 
 # Plot graph according to result by LLM
-def plot_graph(df, metadata):
+def plot_graph(df, metadata) -> Figure:
     """
     Plot a graph using Plotly based on LLM-provided metadata.
 

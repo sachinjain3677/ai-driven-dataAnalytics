@@ -90,4 +90,50 @@ def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) ->
         """
     return prompt
 
+# LLM Prompt to extract key insights from schema, sample data and user query
+def create_insight_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
+    prompt = f"""
+        You are a data analysis expert. Your task is to find the most important insights from the given schema, data, and user query.
+
+        Schema:
+        {schema_text}
+
+        Sample data:
+        {samples_text}
+
+        User query: "{user_query}"
+
+        Instructions (STRICT):
+        - Carefully analyze the schema and sample data in the context of the user query.
+        - Identify only the most relevant and actionable insights that directly answer the user query.
+        - Ensure insights are concise, factual, and derived from the provided schema/data.
+        - Do NOT make assumptions beyond the given schema and sample data.
+        - Respond ONLY with a valid JSON object, nothing else.
+        - DO NOT include explanations, natural language, markdown, code fences, or comments.
+        - DO NOT invent additional keys or change key names.
+        - DO NOT add any prefixes like "Here is the JSON".
+        - The output must be directly parsable by `json.loads`.
+
+        The JSON object must have exactly this structure:
+
+        {{
+          "insights": [
+            "string insight 1",
+            "string insight 2",
+            ...
+          ]
+        }}
+
+        Example of correct output:
+
+        {{
+          "insights": [
+            "Freight costs to Germany increased 40% steadily from 1994 to 1995.",
+            "Most orders shipped to Germany in 1995 were above $100 freight cost."
+          ]
+        }}
+        """
+    return prompt
+
+
 
