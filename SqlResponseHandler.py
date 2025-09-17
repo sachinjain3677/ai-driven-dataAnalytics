@@ -6,6 +6,7 @@ from LLMResponseGenerator import call_llm
 from LLMPrompts import generate_dtype_prompt
 from dataLoad import generate_dtype_prompt, parse_llm_dtype_response, parse_dtype_dict_to_pandas_dtypes, GLOBAL_DTYPE_DICT
 import pandas as pd
+from phoenixHelper import *
 
 langfuse = get_client()
 
@@ -13,6 +14,7 @@ langfuse = get_client()
 conn = duckdb.connect('my_data.duckdb')
 
 # Send prompt to LLM to get response
+@tracer.chain()
 def get_sql_query_from_llm(prompt: str) -> str:
     raw_response = call_llm(prompt, span_name="ollama_generate_sql", external_id="request_12345")
 
@@ -27,6 +29,7 @@ def get_sql_query_from_llm(prompt: str) -> str:
     return sql_query
 
 # Validate sql received from LLM response using sqlglot
+@tracer.chain()
 def validate_and_normalize_sql(sql_query: str) -> str:
     try:
         print(f"[INFO] Validating SQL query: {sql_query}")
@@ -52,6 +55,7 @@ def validate_and_normalize_sql(sql_query: str) -> str:
 
 
 
+@tracer.chain()
 def execute_sql(sql_query: str) -> pd.DataFrame:
     """
     Executes the validated SQL on DuckDB, applies datatypes from GLOBAL_DTYPE_DICT,

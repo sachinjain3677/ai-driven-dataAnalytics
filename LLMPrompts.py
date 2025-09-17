@@ -1,8 +1,10 @@
 import json
+from phoenixHelper import *
 
 # -------------------------
 # Prompt generation for LLM dtype inference
 # -------------------------
+@tracer.chain()
 def generate_dtype_prompt(first_row: dict, table_name: str) -> str:
     """Generate a prompt for the LLM to infer column datatypes from the first row."""
     return (
@@ -18,6 +20,7 @@ def generate_dtype_prompt(first_row: dict, table_name: str) -> str:
     )
 
 # Prompt to be given to LLM to generate SQL query
+@tracer.chain()
 def get_sql_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
     return f"""
     You are a SQL expert. Based on the schema below:
@@ -47,6 +50,7 @@ def get_sql_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
 
 
 # LLM Prompt to predict graph type according to user query, sample data and dataset schema
+@tracer.chain()
 def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
     prompt = f"""
         You are a data visualization expert. Your task is to determine the most appropriate graph for a user's request.
@@ -91,6 +95,7 @@ def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) ->
     return prompt
 
 # LLM Prompt to extract key insights from schema, sample data and user query
+@tracer.chain()
 def create_insight_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
     prompt = f"""
         You are a data analysis expert. Your task is to find the most important insights from the given schema, data, and user query.

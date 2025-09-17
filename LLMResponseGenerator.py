@@ -2,6 +2,7 @@ import requests
 from langfuse import get_client
 import json
 import os
+from phoenixHelper import *
 
 # Set Langfuse credentials
 os.environ["LANGFUSE_SECRET_KEY"] = "sk-lf-391f193d-c128-4eb7-a2a4-643fdccb6fa7"
@@ -11,6 +12,7 @@ os.environ["LANGFUSE_HOST"] = "https://cloud.langfuse.com"
 langfuse = get_client()
 
 # Function to call LLM with some specifications and get a raw response
+@tracer.chain()
 def call_llm(prompt: str, span_name: str, external_id: str) -> str:
     """
     Generic function to call the locally hosted Mistral model via Ollama API.

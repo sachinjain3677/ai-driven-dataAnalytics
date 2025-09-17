@@ -10,6 +10,7 @@ from typing import Dict
 # Import the LLM utility from your other file
 from LLMResponseGenerator import call_llm  # adjust import path as needed
 from LLMPrompts import generate_dtype_prompt
+from phoenixHelper import *
 
 # -------------------------
 # Global variables
@@ -27,6 +28,7 @@ customers_csv_path = "dataset/customers.csv"
 # -------------------------
 # Database connection
 # -------------------------
+@tracer.chain()
 def connect_to_duckdb(db_path='my_data.duckdb'):
     global conn
     if conn is None:
@@ -42,6 +44,7 @@ def get_first_row_from_csv(csv_path: str) -> Dict:
     df_sample = pd.read_csv(csv_path, nrows=1)
     return df_sample.to_dict(orient="records")[0]
 
+@tracer.chain()
 def infer_dtypes_from_csv(csv_path: str, table_name: str) -> Dict[str, str]:
     """Use LLM to infer Python/pandas datatypes for CSV columns."""
     first_row = get_first_row_from_csv(csv_path)
@@ -54,6 +57,7 @@ def infer_dtypes_from_csv(csv_path: str, table_name: str) -> Dict[str, str]:
 # -------------------------
 # Utility to parse LLM dtype response
 # -------------------------
+@tracer.chain()
 def parse_llm_dtype_response(llm_response: str) -> dict:
     """
     Parse the LLM response for datatypes into a dictionary of column -> dtype string.
@@ -68,6 +72,7 @@ def parse_llm_dtype_response(llm_response: str) -> dict:
 # Global dictionary to persist column -> original dtype mapping
 GLOBAL_DTYPE_DICT = {}
 
+@tracer.chain()
 def parse_dtype_dict_to_pandas_dtypes(dtype_dict: dict) -> tuple[dict, list]:
     """
     Converts a dictionary of column_name -> dtype (from LLM or other source)
@@ -127,6 +132,7 @@ def print_dict_items(d: dict[str, str]) -> None:
     for key, value in d.items():
         print(f"{key}: {value}")
 
+@tracer.chain()
 def load_csv_with_llm_dtypes(csv_path: str, table_name: str) -> pd.DataFrame:
     # Step 1: Call LLM to infer datatypes
     dtype_dict = infer_dtypes_from_csv(csv_path, table_name)
@@ -182,6 +188,7 @@ def table_exists(con, table_name: str) -> bool:
 # -------------------------
 # Create table in DuckDB using DataFrame and inferred dtypes
 # -------------------------
+@tracer.chain()
 def create_table_with_llm_dtypes(df: pd.DataFrame, table_name: str):
     if table_exists(conn, table_name):
         print(f"Table '{table_name}' already exists, dropping from db")
@@ -202,6 +209,7 @@ def create_table_with_llm_dtypes(df: pd.DataFrame, table_name: str):
 # -------------------------
 # Load all CSVs into DuckDB with LLM-inferred dtypes
 # -------------------------
+@tracer.chain()
 def load_data_into_duckdb_with_llm():
     global orders_df, employees_df, customers_df
     global orders_csv_path, employees_csv_path, customers_csv_path
@@ -220,6 +228,7 @@ def load_data_into_duckdb_with_llm():
 # -------------------------
 # Utility functions: fetch schemas and sample rows
 # -------------------------
+@tracer.chain()
 def get_schemas() -> dict:
     """Return inferred schema/datatypes for all three dataframes."""
     global orders_df, employees_df, customers_df
