@@ -1,5 +1,5 @@
 import json
-from phoenixHelper import *
+from tracing import tracer
 
 # -------------------------
 # Prompt generation for LLM dtype inference

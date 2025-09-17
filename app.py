@@ -10,7 +10,7 @@ from LLMPrompts import *
 from SqlResponseHandler import *
 from GraphGenerator import *
 from vectordb_handler import VectorDBHandler
-from phoenixHelper import *
+from tracing import tracer
 
 app = FastAPI()
 

@@ -3,7 +3,8 @@ import pandas as pd
 import plotly.express as px
 from LLMResponseGenerator import call_llm
 from plotly.graph_objs import Figure
-from phoenixHelper import *
+import inspect
+from tracing import tracer
 
 # Get LLM to decide what kind of graph to be made for the usecase
 @tracer.chain()
@@ -17,8 +18,7 @@ def get_graph_metadata_from_llm(prompt: str) -> dict:
     Returns:
         dict: Graph metadata (graph_type, x, y, title, etc.)
     """
-    print("[INFO] Requesting graph metadata from LLM")
-
+    print("[INFO] LLM called from: ", inspect.currentframe().f_code.co_name)
     raw_response = call_llm(
         prompt,
         span_name="ollama_generate_graph",

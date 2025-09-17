@@ -1,14 +1,13 @@
 import json
 import duckdb
 import sqlglot
-from langfuse import get_client
 from LLMResponseGenerator import call_llm
 from LLMPrompts import generate_dtype_prompt
 from dataLoad import generate_dtype_prompt, parse_llm_dtype_response, parse_dtype_dict_to_pandas_dtypes, GLOBAL_DTYPE_DICT
 import pandas as pd
-from phoenixHelper import *
+import inspect
+from tracing import tracer
 
-langfuse = get_client()
 
 # Reuse the persisted database
 conn = duckdb.connect('my_data.duckdb')
@@ -16,6 +15,7 @@ conn = duckdb.connect('my_data.duckdb')
 # Send prompt to LLM to get response
 @tracer.chain()
 def get_sql_query_from_llm(prompt: str) -> str:
+    print("[INFO] LLM called from: ", inspect.currentframe().f_code.co_name)
     raw_response = call_llm(prompt, span_name="ollama_generate_sql", external_id="request_12345")
 
     try:
