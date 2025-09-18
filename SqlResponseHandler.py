@@ -16,7 +16,7 @@ conn = duckdb.connect('my_data.duckdb')
 @tracer.chain()
 def get_sql_query_from_llm(prompt: str) -> str:
     print("[INFO] LLM called from: ", inspect.currentframe().f_code.co_name)
-    raw_response = call_llm(prompt, span_name="ollama_generate_sql", external_id="request_12345")
+    raw_response = call_llm(prompt)
 
     try:
         parsed = json.loads(raw_response)

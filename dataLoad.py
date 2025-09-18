@@ -52,7 +52,7 @@ def infer_dtypes_from_csv(csv_path: str, table_name: str) -> Dict[str, str]:
     # print("prompt given for", table_name, ":", prompt)
     print("\n\n[INFO] LLM called from: ", inspect.currentframe().f_code.co_name, ", csv: ", csv_path)
 
-    llm_response = call_llm(prompt, span_name=f"infer_types_{table_name}", external_id=table_name)
+    llm_response = call_llm(prompt)
 
     return parse_llm_dtype_response(llm_response)
 

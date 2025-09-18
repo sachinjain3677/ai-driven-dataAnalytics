@@ -200,7 +200,7 @@ def process_user_query(user_query: str) -> str:
         analysis_query = "Which country ordered the most freight based on this data"
         analysis_prompt = create_insight_prompt(query_results_schema_text, results_str, analysis_query)
     
-        analysis_response = call_llm(analysis_prompt, span_name="ollama_generate_sql", external_id="request_12345")
+        analysis_response = call_llm(analysis_prompt)
         print("Result Insights: ", analysis_response)
         span2.set_output(value=analysis_response)
     

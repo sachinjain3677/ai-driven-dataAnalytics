@@ -5,7 +5,7 @@ from tracing import tracer
 
 # Function to call LLM with some specifications and get a raw response
 @tracer.chain()
-def call_llm(prompt: str, span_name: str, external_id: str) -> str:
+def call_llm(prompt: str) -> str:
     """
     Generic function to call the locally hosted Mistral model via Ollama API.
 
