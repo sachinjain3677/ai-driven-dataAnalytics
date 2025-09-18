@@ -29,6 +29,7 @@ pip install vosk
 pip install transformers
 pip install pandas
 pip install kaleido
+pip install arize-phoenix-otel
 ## 6. Run the fastAPI app 
 uvicorn app:app --reload
 ## 7. In a separate terminal, run the curl command
