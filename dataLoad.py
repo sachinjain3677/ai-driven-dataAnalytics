@@ -7,10 +7,12 @@ from datetime import datetime
 from typing import Dict
 
 # Import the LLM utility from your other file
-from LLMResponseGenerator import call_llm  # adjust import path as needed
+from LLMResponseGenerator import call_llm_infer_dtypes  # adjust import path as needed
 from LLMPrompts import generate_dtype_prompt
 import inspect
 from tracing import tracer
+
+from llm_as_a_judge.judgeHandler import judge_response_with_gemini
 
 # -------------------------
 # Global variables
@@ -52,7 +54,9 @@ def infer_dtypes_from_csv(csv_path: str, table_name: str) -> Dict[str, str]:
     # print("prompt given for", table_name, ":", prompt)
     print("\n\n[INFO] LLM called from: ", inspect.currentframe().f_code.co_name, ", csv: ", csv_path)
 
-    llm_response = call_llm(prompt)
+    llm_response = call_llm_infer_dtypes(prompt)
+
+    judge_response_with_gemini("dtypes", prompt, llm_response)
 
     return parse_llm_dtype_response(llm_response)
 

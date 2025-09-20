@@ -1,10 +1,11 @@
 import json
 import pandas as pd
 import plotly.express as px
-from LLMResponseGenerator import call_llm
+from LLMResponseGenerator import call_llm_generate_graph
 from plotly.graph_objs import Figure
 import inspect
 from tracing import tracer
+from llm_as_a_judge.judgeHandler import judge_response_with_gemini
 
 # Get LLM to decide what kind of graph to be made for the usecase
 @tracer.chain()
@@ -19,11 +20,9 @@ def get_graph_metadata_from_llm(prompt: str) -> dict:
         dict: Graph metadata (graph_type, x, y, title, etc.)
     """
     print("[INFO] LLM called from: ", inspect.currentframe().f_code.co_name)
-    raw_response = call_llm(
-        prompt,
-        span_name="ollama_generate_graph",
-        external_id="graph_request_12345"
-    )
+    raw_response = call_llm_generate_graph(prompt)
+
+    judge_response_with_gemini("graph", prompt, raw_response)
 
     print(f"[INFO] Raw LLM response received (length={len(raw_response)} chars)")
     print(f"[DEBUG] Raw LLM response:\n{raw_response}")

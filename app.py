@@ -11,6 +11,10 @@ from SqlResponseHandler import *
 from GraphGenerator import *
 from vectordb_handler import VectorDBHandler
 from tracing import tracer
+from LLMResponseGenerator import call_llm_analysis_generation
+
+from llm_as_a_judge.judgeHandler import judge_response_with_gemini
+
 
 app = FastAPI()
 
@@ -164,7 +168,7 @@ def process_user_query(user_query: str) -> str:
     
         print("\nGetting graph metadata from LLM...")
         metadata = get_graph_metadata_from_llm(graph_prompt)
-    
+
         print("\nPlotting graph...")
         fig = plot_graph(query_results, metadata)
     
@@ -200,7 +204,10 @@ def process_user_query(user_query: str) -> str:
         analysis_query = "Which country ordered the most freight based on this data"
         analysis_prompt = create_insight_prompt(query_results_schema_text, results_str, analysis_query)
     
-        analysis_response = call_llm(analysis_prompt)
+        analysis_response = call_llm_analysis_generation(analysis_prompt)
+
+        judge_response_with_gemini("analysis", analysis_prompt, analysis_response)
+
         print("Result Insights: ", analysis_response)
         span2.set_output(value=analysis_response)
     

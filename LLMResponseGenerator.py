@@ -1,10 +1,25 @@
 import requests
 import json
-import os
 from tracing import tracer
 
+
+@tracer.chain(name="llm.dtype_generation")
+def call_llm_infer_dtypes(prompt: str) -> str:
+    return call_llm(prompt)
+
+@tracer.chain(name="llm.analysis_generation")
+def call_llm_analysis_generation(prompt: str) -> str:
+    return call_llm(prompt)
+
+@tracer.chain(name="llm.graph_generation")
+def call_llm_generate_graph(prompt: str):
+    return call_llm(prompt)
+
+@tracer.chain(name="llm.sql_generation")
+def get_sql_call_llm(prompt: str):
+    return call_llm(prompt)
+
 # Function to call LLM with some specifications and get a raw response
-@tracer.chain()
 def call_llm(prompt: str) -> str:
     """
     Generic function to call the locally hosted Mistral model via Ollama API.

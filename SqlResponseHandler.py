@@ -1,13 +1,13 @@
 import json
 import duckdb
 import sqlglot
-from LLMResponseGenerator import call_llm
+from LLMResponseGenerator import get_sql_call_llm
 from LLMPrompts import generate_dtype_prompt
 from dataLoad import generate_dtype_prompt, parse_llm_dtype_response, parse_dtype_dict_to_pandas_dtypes, GLOBAL_DTYPE_DICT
 import pandas as pd
 import inspect
 from tracing import tracer
-
+from llm_as_a_judge.judgeHandler import judge_response_with_gemini
 
 # Reuse the persisted database
 conn = duckdb.connect('my_data.duckdb')
@@ -16,7 +16,9 @@ conn = duckdb.connect('my_data.duckdb')
 @tracer.chain()
 def get_sql_query_from_llm(prompt: str) -> str:
     print("[INFO] LLM called from: ", inspect.currentframe().f_code.co_name)
-    raw_response = call_llm(prompt)
+    raw_response = get_sql_call_llm(prompt)
+    judge_response_with_gemini("sql", prompt, raw_response)
+    # print("MISTRAL SQL RAW RESPONSE: ", raw_response)
 
     try:
         parsed = json.loads(raw_response)
