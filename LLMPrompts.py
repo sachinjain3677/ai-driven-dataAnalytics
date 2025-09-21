@@ -11,11 +11,11 @@ def generate_dtype_prompt(first_row: dict, table_name: str) -> str:
         f"Given the first row of a CSV for table '{table_name}', "
         f"suggest the most relevant Python/pandas datatype for each column.\n\n"
         f"Important instructions:\n"
-        f"- Respond ONLY with one column per line.\n"
-        f"- Format: column_name: datatype\n"
-        f"- Do not include explanations, extra text, or JSON.\n"
-        f"- Use only these datatypes: int, float, string, datetime.\n\n"
-        f"- datatype for POSTALCODE is always string\n\n"
+        f"- Respond ONLY with one column per line in the format 'column_name: datatype'.\n"
+        f"- Do not include explanations, extra text, or JSON formatting.\n"
+        f"- Use only these datatypes: int, float, string, datetime.\n"
+        f"- For columns that look like numbers but are actually identifiers (e.g., zip codes, order IDs, product codes), use the 'string' datatype.\n"
+        f"- If a value is ambiguous, prefer 'string' as a safe default.\n\n"
         f"Row sample: {json.dumps(first_row, indent=2)}"
     )
 
@@ -23,28 +23,29 @@ def generate_dtype_prompt(first_row: dict, table_name: str) -> str:
 @tracer.chain()
 def get_sql_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
     return f"""
-    You are a SQL expert. Based on the schema below:
+    You are an expert DuckDB SQL programmer. Your task is to generate a SQL query from a natural language request.
+
+    Schema of the available tables:
     {schema_text}
     
-    Sample Data:
+    Sample data from the tables:
     {samples_text}
     
-    Important instructions for DuckDB:
-    - All columns are stored with correct datatypes (e.g., DATE, TIMESTAMP, INTEGER, VARCHAR).
-    - You can directly use date/time functions (YEAR(), MONTH(), DAY(), comparisons) on DATE/TIMESTAMP columns.
-    - Use ISO-standard date literals in the format 'YYYY-MM-DD' when filtering or comparing DATE/TIMESTAMP values.
-    - Do not attempt to parse or cast columns like `orderdate` manually — they are already stored as proper DATE/TIMESTAMP types.
-    - Only use columns that exist in the schema provided above.
-    - Always generate syntactically valid DuckDB SQL.
-    - Ensure the SELECT clause includes only columns from the schema.
+    Important instructions for DuckDB SQL generation:
+    - Use the schema and sample data to understand the table structure and content.
+    - For string comparisons that should be case-insensitive, use the `ILIKE` operator instead of `LIKE`.
+    - If the user asks for a 'top N' or 'bottom N' result, use `ORDER BY` and `LIMIT N`.
+    - When generating queries involving dates, use standard date functions like `YEAR()`, `MONTH()`, `DAY()`, and comparisons with 'YYYY-MM-DD' formatted strings.
+    - Do not invent columns or tables. Only use the tables and columns described in the provided schema.
+    - Always generate a single, syntactically correct DuckDB SQL query.
 
-    Generate an appropriate DuckDB-compatible SQL query for this natural language request:
-    {user_query}
+    Natural Language User Query:
+    "{user_query}"
 
-    Respond **ONLY in this JSON format**:
+    Respond **ONLY in this JSON format**, with no additional text or explanations:
     {{
-        "sql_query": "SELECT ...",
-        "explanation": "A brief explanation of the query"
+        "sql_query": "SELECT ... FROM ... WHERE ...",
+        "explanation": "A brief, user-friendly explanation of what the query does."
     }}
     """
 
@@ -53,7 +54,7 @@ def get_sql_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
 @tracer.chain()
 def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
     prompt = f"""
-        You are a data visualization expert. Your task is to determine the most appropriate graph for a user's request.
+        You are a data visualization expert. Your task is to determine the most appropriate graph for a user's request based on the data schema and query.
 
         Schema:
         {schema_text}
@@ -63,33 +64,30 @@ def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) ->
 
         User query: "{user_query}"
 
-        Instructions (STRICT):
-        - If the user_query explicitly mentions a graph type (Line, Bar, Pie, Scatter, Histogram), give it highest priority.
-        - Select only one of these graph types: "Line", "Bar", "Pie", "Scatter", "Histogram".
-        - Use only column names from the schema provided.
-        - Respond ONLY with a single valid JSON object, nothing else.
-        - DO NOT include explanations, natural language, markdown, code fences, or comments.
-        - DO NOT invent additional keys or change key names.
-        - DO NOT add any prefixes like "Here is the JSON".
-        - The output must be directly parsable by `json.loads`.
-        - None of the columns (x or y) can be null or None, except for "Histogram" which only requires the "x" column.
+        Instructions for selecting a graph type:
+        - **Line Chart**: Choose for showing trends over a continuous variable, especially time-series data.
+        - **Bar Chart**: Choose for comparing values across different categories.
+        - **Pie Chart**: Choose for representing parts of a whole. Best for a small number of categories (less than 6).
+        - **Scatter Plot**: Choose for exploring the relationship between two numerical variables.
+        - **Histogram**: Choose for understanding the distribution of a single numerical variable.
+        - If the user explicitly requests a graph type, prioritize their choice.
 
-        The JSON object must have exactly these keys:
-
-        {{
-          "graph_type": "Line" | "Bar" | "Pie" | "Scatter" | "Histogram",
-          "x": "string",
-          "y": "string or null",
-          "title": "string"
-        }}
+        STRICT Response Format:
+        - Respond ONLY with a single, valid JSON object.
+        - The JSON must contain these exact keys: `graph_type`, `x`, `y`, `title`.
+        - `graph_type` must be one of: "Line", "Bar", "Pie", "Scatter", "Histogram".
+        - `x` and `y` must be valid column names from the provided schema.
+        - `y` can be `null` only if the `graph_type` is "Histogram".
+        - `title` should be a descriptive title for the chart.
+        - Do not include any explanations, comments, or markdown.
 
         Example of correct output:
 
         {{
           "graph_type": "Bar",
-          "x": "shipcountry",
-          "y": "freight",
-          "title": "Freight Details of Orders Shipped to Germany in 1995"
+          "x": "category_column",
+          "y": "numeric_column",
+          "title": "Distribution of [Y Column] by [X Column]"
         }}
         """
     return prompt
@@ -98,43 +96,43 @@ def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) ->
 @tracer.chain()
 def create_insight_prompt(schema_text: str, samples_text: str, user_query: str) -> str:
     prompt = f"""
-        You are a data analysis expert. Your task is to find the most important insights from the given schema, data, and user query.
+        You are a senior data analyst reviewing a final dataset that was generated based on a user's query. Your task is to provide concise, intelligent insights about this specific dataset.
 
-        Schema:
+        **Crucial Context**: The data you are seeing has **already been filtered** according to the user's original query. You must assume the conditions of the query are true for the data you are analyzing.
+
+        Original User Query: "{user_query}"
+
+        Schema of the Final Dataset:
         {schema_text}
 
-        Sample data:
+        Sample of the Final Dataset:
         {samples_text}
 
-        User query: "{user_query}"
+        Instructions for Generating Insights:
+        1.  **Use the User Query as Context**: Your insights should be framed by the user's query. For example, if the query was "show me sales in Germany," you should assume all data is from Germany, even if there is no 'country' column in the final dataset.
+        2.  **Analyze the Provided Data**: Focus on finding trends, comparisons, outliers, and key statistics within the given dataset.
+        3.  **Be Smart, Not Literal**: Do not state that information is missing if it was part of the original query. Instead, use that context to make your insights more powerful.
+        4.  **Be Factual and Concise**: Insights must be derived directly from the data, but interpreted through the lens of the query.
 
-        Instructions (STRICT):
-        - Carefully analyze the schema and sample data in the context of the user query.
-        - Identify only the most relevant and actionable insights that directly answer the user query.
-        - Ensure insights are concise, factual, and derived from the provided schema/data.
-        - Do NOT make assumptions beyond the given schema and sample data.
-        - Respond ONLY with a valid JSON object, nothing else.
-        - DO NOT include explanations, natural language, markdown, code fences, or comments.
-        - DO NOT invent additional keys or change key names.
-        - DO NOT add any prefixes like "Here is the JSON".
-        - The output must be directly parsable by `json.loads`.
+        STRICT Response Format:
+        - Respond ONLY with a valid JSON object.
+        - The JSON object must contain a single key: `"insights"`.
+        - The value of `"insights"` must be a list of strings, where each string is a distinct insight.
+        - Do not include explanations, comments, or markdown.
 
-        The JSON object must have exactly this structure:
+        Example:
+        - User Query: "What were the total sales for each product category in 2023?"
+        - Data Provided: A table with 'product_category' and 'total_sales' columns.
+        - **Correct Insight**: "In 2023, 'Electronics' was the highest-selling category, while 'Home Goods' was the lowest."
+        - **Incorrect Insight**: "The data does not specify the year, so I cannot confirm these sales are from 2023."
 
+        Your turn. Generate the insights based on the information provided.
+
+        Example of correct output format:
         {{
           "insights": [
-            "string insight 1",
-            "string insight 2",
-            ...
-          ]
-        }}
-
-        Example of correct output:
-
-        {{
-          "insights": [
-            "Freight costs to Germany increased 40% steadily from 1994 to 1995.",
-            "Most orders shipped to Germany in 1995 were above $100 freight cost."
+            "Based on the query, [Category A] had the highest average [Metric B].",
+            "Within the requested timeframe, there was a significant upward trend in [Metric C]."
           ]
         }}
         """

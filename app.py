@@ -1,11 +1,14 @@
-from fastapi import FastAPI, Request, File, UploadFile
+from fastapi import FastAPI, Request, File, UploadFile, HTTPException
 from io import BytesIO
 import subprocess
 import json
 import wave
+import os
+import shutil
+import base64
 from vosk import Model, KaldiRecognizer
 
-from dataLoad import connect_to_duckdb, load_data_into_duckdb_with_llm, get_schemas, get_top_rows
+from dataLoad import connect_to_duckdb, load_data_into_duckdb_with_llm, get_schemas, get_top_rows, reset_database, reset_dtype_cache
 from LLMPrompts import *
 from SqlResponseHandler import *
 from GraphGenerator import *
@@ -14,40 +17,99 @@ from tracing import tracer
 from LLMResponseGenerator import call_llm_analysis_generation
 
 from llm_as_a_judge.judgeHandler import judge_response_with_gemini
+from redis_client import redis_client, check_redis_connection
+from datetime import datetime
+import pandas as pd
 
 llm_as_a_judge = os.getenv("LLM_AS_A_JUDGE", "false").lower() in ("true", "1", "yes")
 
 app = FastAPI()
 
+# --- Custom JSON Serializer ---
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code"""
+    if isinstance(obj, (datetime, pd.Timestamp)):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
 vosk_model_path = "./vosk-model-small-en-us-0.15"
 model = Model(vosk_model_path)
 
-schema_text = None
-samples_text = None
-
 @app.on_event("startup")
-@tracer.tool()
 async def startup_event():
-    global schema_text, samples_text
-    # Code here runs once, when the server starts
     print("Server is starting...")
-
     # Connect to DuckDB
     connect_to_duckdb()
+    # Check Redis connection
+    check_redis_connection()
 
-    #Load Data into DuckDB
-    load_data_into_duckdb_with_llm()
+@app.post("/upload_csv")
+@tracer.tool()
+async def upload_csv(file: UploadFile = File(...)):
+    upload_folder = "uploads"
+    if not os.path.exists(upload_folder):
+        os.makedirs(upload_folder)
 
-    # Define schema_text and samples_text (hardcoded for now)
+    file_path = os.path.join(upload_folder, file.filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    table_name = os.path.splitext(file.filename)[0]
+    load_data_into_duckdb_with_llm(file_path, table_name)
+
+    # Get schema and samples
     schema_text = get_schemas()
     samples_text = get_top_rows()
+
+    # Store in Redis, using the custom serializer for datetime objects
+    redis_client.set("schema_text", json.dumps(schema_text, default=json_serial))
+    redis_client.set("samples_text", json.dumps(samples_text, default=json_serial))
+
+    return {"message": f"File '{file.filename}' uploaded and processed successfully."}
+
+@app.post("/reset")
+@tracer.tool()
+async def reset_state():
+    """Resets the application state by clearing the database and uploaded files."""
+    print("Resetting application state...")
+
+    # 1. Clear the DuckDB database
+    reset_database()
+
+    # 2. Clear the in-memory dtype cache
+    reset_dtype_cache()
+
+    # 3. Clear the state in Redis
+    redis_client.delete("schema_text", "samples_text")
+    print("State cleared from Redis.")
+
+    # 4. Clear the uploads directory
+    upload_folder = "uploads"
+    if os.path.exists(upload_folder):
+        shutil.rmtree(upload_folder)
+        print(f"'{upload_folder}' directory has been removed.")
+    os.makedirs(upload_folder)
+    print(f"'{upload_folder}' directory has been recreated.")
+
+    print("Application state has been successfully reset.")
+    return {"message": "Application state has been successfully reset."}
 
 @app.post("/generate_sql")
 @tracer.tool()
 async def generate_sql(request: Request):
     body = await request.json()
     user_query = body.get("query")  # Natural language query
-    process_user_query(user_query)
+    graph_path, insights = process_user_query(user_query)
+    print("\nTranscription sent to process_user_query")
+
+    # Encode the image to Base64
+    with open(graph_path, "rb") as image_file:
+        encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+
+    return {
+        "graph": encoded_image,
+        "insights": insights
+    }
 
 
 # Converts any audio file to wav which can be further processed to text by speech-to-text llm
@@ -124,20 +186,39 @@ async def generate_sql_from_audio(audio: UploadFile = File(...)):
         transcription += res.get("text", "")
         print(f"[INFO] Final transcription: '{transcription.strip()}'")
 
-        # Step 5: Process transcription
-        process_user_query(transcription)
+        # Step 5: Process transcription and get results
+        graph_path, insights = process_user_query(transcription)
         print("[INFO] Transcription sent to process_user_query")
 
-        return {"transcription": transcription.strip()}
+        # Encode the image to Base64
+        with open(graph_path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+
+        return {
+            "transcription": transcription.strip(),
+            "graph": encoded_image,
+            "insights": insights
+        }
 
     except Exception as e:
         print(f"[EXCEPTION] Error in generate_sql_from_audio: {type(e).__name__}: {e}")
         return {"error": str(e)}
 
 # Processing of received user query to fetch data and plot graph
-def process_user_query(user_query: str) -> str:
-    global schema_text, samples_text
+def process_user_query(user_query: str) -> tuple[str, str]:
     print("\nBuilding SQL generation prompt...")
+    
+    # Retrieve data from Redis
+    schema_text_json = redis_client.get("schema_text")
+    samples_text_json = redis_client.get("samples_text")
+
+    if not schema_text_json or not samples_text_json:
+        # This is a fallback, ideally the client should handle this state
+        raise HTTPException(status_code=400, detail="No data has been uploaded. Please upload a CSV first.")
+
+    schema_text = json.loads(schema_text_json)
+    samples_text = json.loads(samples_text_json)
+
     with tracer.start_as_current_span(
             "execute_sql_query",
             openinference_span_kind="chain"
@@ -202,8 +283,7 @@ def process_user_query(user_query: str) -> str:
             formatted_meta = json.dumps(meta, indent=2)  # pretty JSON format
             results_str += f"{formatted_meta}\n\n"
     
-        analysis_query = "Which country ordered the most freight based on this data"
-        analysis_prompt = create_insight_prompt(query_results_schema_text, results_str, analysis_query)
+        analysis_prompt = create_insight_prompt(query_results_schema_text, results_str, user_query)
     
         analysis_response = call_llm_analysis_generation(analysis_prompt)
 
@@ -215,4 +295,4 @@ def process_user_query(user_query: str) -> str:
     
         handler.clear_collection("query_results_collection")
     
-        return(analysis_response)
+        return(graph_image_path, analysis_response)

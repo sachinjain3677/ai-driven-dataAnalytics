@@ -4,7 +4,8 @@ import sqlglot
 import os
 from LLMResponseGenerator import get_sql_call_llm
 from LLMPrompts import generate_dtype_prompt
-from dataLoad import generate_dtype_prompt, parse_llm_dtype_response, parse_dtype_dict_to_pandas_dtypes, GLOBAL_DTYPE_DICT
+from dataLoad import parse_dtype_dict_to_pandas_dtypes
+from redis_client import redis_client
 import pandas as pd
 import inspect
 from tracing import tracer
@@ -84,10 +85,11 @@ def execute_sql(sql_query: str) -> pd.DataFrame:
         result_dicts = [dict(zip(columns, row)) for row in result]
         print(f"[DEBUG] First row sample: {result_dicts[0] if result_dicts else 'No rows'}")
 
-        # Use global dtype mapping instead of calling LLM
-        print(f"[INFO] Using GLOBAL_DTYPE_DICT for dtype inference: {GLOBAL_DTYPE_DICT}")
+        # Use Redis dtype mapping instead of calling LLM
+        dtype_cache = redis_client.hgetall("dtype_cache")
+        print(f"[INFO] Using Redis dtype_cache for dtype inference: {dtype_cache}")
 
-        pandas_dtype_map, parse_dates = parse_dtype_dict_to_pandas_dtypes(GLOBAL_DTYPE_DICT)
+        pandas_dtype_map, parse_dates = parse_dtype_dict_to_pandas_dtypes(dtype_cache)
         print(f"[DEBUG] Pandas dtype map: {pandas_dtype_map}")
         print(f"[DEBUG] Datetime columns: {parse_dates}")
 

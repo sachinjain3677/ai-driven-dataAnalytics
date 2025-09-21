@@ -31,8 +31,11 @@ pip install pandas
 pip install kaleido
 pip install arize-phoenix-otel
 pip install google.generativeai
+pip install redis
 ## 6. Run the fastAPI app 
 uvicorn app:app --reload
 ## 7. In a separate terminal, run the curl command
 curl -X POST "http://127.0.0.1:8000/generate_sql" -H "Content-Type: application/json" -d '{"query": "Give me total freight sent to each country in the year 1995"}'
 curl -X POST "http://localhost:8000/generate_sql_from_audio" -F "audio=@sample.wav"
+
+curl -X POST http://127.0.0.1:8000/upload_csv -F "file=@dataset/orders.csv"

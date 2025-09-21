@@ -5,6 +5,7 @@ import pandas as pd
 import duckdb
 from datetime import datetime
 from typing import Dict
+import os
 
 # Import the LLM utility from your other file
 from LLMResponseGenerator import call_llm_infer_dtypes  # adjust import path as needed
@@ -13,6 +14,7 @@ import inspect
 from tracing import tracer
 
 from llm_as_a_judge.judgeHandler import judge_response_with_gemini
+from redis_client import redis_client
 
 llm_as_a_judge = os.getenv("LLM_AS_A_JUDGE", "false").lower() in ("true", "1", "yes")
 
@@ -20,14 +22,7 @@ llm_as_a_judge = os.getenv("LLM_AS_A_JUDGE", "false").lower() in ("true", "1", "
 # Global variables
 # -------------------------
 conn = None
-orders_df = None
-employees_df = None
-customers_df = None
 date_format = "%m/%d/%Y %I:%M:%S %p"  # adjust to match your CSV format - assumption for user csv data format
-
-orders_csv_path = "dataset/orders.csv"
-employees_csv_path = "dataset/employees.csv"
-customers_csv_path = "dataset/customers.csv"
 
 # -------------------------
 # Database connection
@@ -37,7 +32,7 @@ def connect_to_duckdb(db_path='my_data.duckdb'):
     global conn
     if conn is None:
         print("Connecting to DuckDB...")
-        conn = duckdb.connect(db_path)
+        conn = duckdb.connect(db_path, read_only=False)
     return conn
 
 # -------------------------
@@ -53,7 +48,6 @@ def infer_dtypes_from_csv(csv_path: str, table_name: str) -> Dict[str, str]:
     """Use LLM to infer Python/pandas datatypes for CSV columns."""
     first_row = get_first_row_from_csv(csv_path)
     prompt = generate_dtype_prompt(first_row, table_name)
-    # print("prompt given for", table_name, ":", prompt)
     print("\n\n[INFO] LLM called from: ", inspect.currentframe().f_code.co_name, ", csv: ", csv_path)
 
     llm_response = call_llm_infer_dtypes(prompt)
@@ -78,16 +72,12 @@ def parse_llm_dtype_response(llm_response: str) -> dict:
             dtype_mapping_dict[col.strip()] = dtype.strip()
     return dtype_mapping_dict
 
-# Global dictionary to persist column -> original dtype mapping
-GLOBAL_DTYPE_DICT = {}
-
 @tracer.chain()
 def parse_dtype_dict_to_pandas_dtypes(dtype_dict: dict) -> tuple[dict, list]:
     """
     Converts a dictionary of column_name -> dtype (from LLM or other source)
     into a pandas dtype mapping and list of datetime columns.
-    Also stores the original column -> dtype mapping in GLOBAL_DTYPE_DICT
-    for future reference.
+    Also stores the original column -> dtype mapping in a Redis hash.
 
     Args:
         dtype_dict (dict): {column_name: dtype_string}
@@ -96,215 +86,150 @@ def parse_dtype_dict_to_pandas_dtypes(dtype_dict: dict) -> tuple[dict, list]:
         pandas_dtype_map (dict): column -> pandas dtype (Int64, float, string)
         parse_dates (list): list of columns to parse as datetime
     """
-    global GLOBAL_DTYPE_DICT
-    # print(f"[INFO] Parsing dtype dictionary: {dtype_dict}")
-
-    # Persist original mapping
-    GLOBAL_DTYPE_DICT.update(dtype_dict)
-    # print(f"[INFO] Updated GLOBAL_DTYPE_DICT: {GLOBAL_DTYPE_DICT}")
+    # Persist the original mapping in a Redis hash
+    redis_client.hset("dtype_cache", mapping=dtype_dict)
+    print(f"[INFO] Updated Redis dtype_cache with: {dtype_dict}")
 
     parse_dates = []
     pandas_dtype_map = {}
 
     for col, dtype_val in dtype_dict.items():
         dtype_val_lower = dtype_val.lower()
-        # print(f"[DEBUG] Processing column '{col}' with dtype '{dtype_val_lower}'")
 
         if dtype_val_lower in ["int", "integer"]:
             pandas_dtype_map[col] = "Int64"
-            # print(f"[INFO] Mapped column '{col}' -> Int64")
         elif dtype_val_lower in ["float", "double"]:
             pandas_dtype_map[col] = "float"
-            # print(f"[INFO] Mapped column '{col}' -> float")
         elif dtype_val_lower in ["str", "string", "object"]:
             pandas_dtype_map[col] = "string"
-            # print(f"[INFO] Mapped column '{col}' -> string")
         elif dtype_val_lower in ["datetime", "datetime64"]:
             parse_dates.append(col)
-            # print(f"[INFO] Column '{col}' marked for datetime parsing")
         else:
             pandas_dtype_map[col] = "string"
-            # print(f"[WARN] Unknown dtype '{dtype_val}' for column '{col}', defaulting to string")
-
-    # print(f"[INFO] Final pandas dtype map: {pandas_dtype_map}")
-    # print(f"[INFO] Datetime columns: {parse_dates}")
 
     return pandas_dtype_map, parse_dates
-
-
 
 # -------------------------
 # Load CSV with LLM-inferred dtypes and return a DataFrame
 # -------------------------
-def print_dict_items(d: dict[str, str]) -> None:
-    """Prints key-value pairs from a dictionary."""
-    for key, value in d.items():
-        print(f"{key}: {value}")
-
 @tracer.chain()
 def load_csv_with_llm_dtypes(csv_path: str, table_name: str) -> pd.DataFrame:
-    # Step 1: Call LLM to infer datatypes
     dtype_dict = infer_dtypes_from_csv(csv_path, table_name)
-    # print(f"dtypes fetched for table: {table_name} from llm")
-    # print_dict_items(dtype_dict)
-
-    # Step 2: Parse LLM response into pandas dtype mapping
     pandas_dtype_map, parse_dates = parse_dtype_dict_to_pandas_dtypes(dtype_dict)
 
-    # Step 3: Read CSV using inferred dtypes
     df = pd.read_csv(
         csv_path,
         dtype=pandas_dtype_map,
         parse_dates=parse_dates,
-        date_parser=lambda x: (
-            datetime.strptime(str(x), "%m/%d/%Y %I:%M:%S %p") if pd.notnull(x) else pd.NaT
-        )
+        date_format=date_format
     )
 
-    # Step 4: Clean column names
     df.columns = [c.strip().replace(" ", "_").lower() for c in df.columns]
-
-    # print(table_name, "\n", df.head())
     return df
-
 
 # -------------------------
 # Helper to map pandas dtype to DuckDB type
 # -------------------------
 def pandas_dtype_to_duckdb(dtype: str) -> str:
-    dtype = dtype.lower()
-    if dtype in ["int64", "int", "integer"]:
+    dtype = str(dtype).lower()
+    if "int" in dtype:
         return "INTEGER"
-    elif dtype in ["float64", "float", "double"]:
+    elif "float" in dtype:
         return "DOUBLE"
-    elif dtype in ["string", "object"]:
-        return "VARCHAR"
-    elif dtype in ["datetime64[ns]", "datetime"]:
+    elif "datetime" in dtype:
         return "TIMESTAMP"
-    return "VARCHAR"  # fallback
+    return "VARCHAR"  # fallback for object, string, etc.
 
 # -------------------------
 # DuckDB table helpers
 # -------------------------
 def table_exists(con, table_name: str) -> bool:
-    result = con.execute(f"""
-        SELECT COUNT(*)
-        FROM information_schema.tables
-        WHERE table_name = '{table_name}'
-    """).fetchone()[0]
-    return result > 0
+    try:
+        con.execute(f"SELECT 1 FROM {table_name} LIMIT 1")
+        return True
+    except duckdb.Error:
+        return False
 
 # -------------------------
 # Create table in DuckDB using DataFrame and inferred dtypes
 # -------------------------
 @tracer.chain()
 def create_table_with_llm_dtypes(df: pd.DataFrame, table_name: str):
+    global conn
     if table_exists(conn, table_name):
-        # print(f"Table '{table_name}' already exists, dropping from db")
         conn.execute(f"DROP TABLE {table_name}")
 
-    # Use the DataFrame's dtypes (already LLM-inferred) to map to DuckDB types
-    # print("printing col and dtypes for table: ", table_name)
-    col_dtypes = [f"{col} {dtype}" for col, dtype in df.dtypes.items()]
-    print(col_dtypes)
-    cols = [f"{col} {pandas_dtype_to_duckdb(str(dtype))}" for col, dtype in df.dtypes.items()]
-    ddl = f"CREATE TABLE {table_name} ({', '.join(cols)})"
+    cols = [f'"{col}" {pandas_dtype_to_duckdb(str(dtype))}' for col, dtype in df.dtypes.items()]
+    ddl = f'CREATE TABLE "{table_name}" ({', '.join(cols)})'
     conn.execute(ddl)
 
-    # Insert data
-    conn.execute(f"INSERT INTO {table_name} SELECT * FROM df")
+    conn.register('df_temp', df)
+    conn.execute(f'INSERT INTO "{table_name}" SELECT * FROM df_temp')
+    conn.unregister('df_temp')
     print(f"Table '{table_name}' created with LLM-inferred datatypes.")
 
 # -------------------------
-# Load all CSVs into DuckDB with LLM-inferred dtypes
+# Load a single CSV into DuckDB with LLM-inferred dtypes
 # -------------------------
 @tracer.chain()
-def load_data_into_duckdb_with_llm():
-    global orders_df, employees_df, customers_df
-    global orders_csv_path, employees_csv_path, customers_csv_path
-    print("Loading CSVs into DuckDB with LLM-inferred datatypes...")
-
-    # Step 1: Load CSVs using LLM dtypes
-    orders_df = load_csv_with_llm_dtypes(orders_csv_path, "orders")
-    employees_df = load_csv_with_llm_dtypes(employees_csv_path, "employees")
-    customers_df = load_csv_with_llm_dtypes(customers_csv_path, "customers")
-
-    # Step 2: Create tables in DuckDB using LLM-inferred dtypes
-#     create_table_with_llm_dtypes(orders_df, "orders")
-#     create_table_with_llm_dtypes(employees_df, "employees")
-#     create_table_with_llm_dtypes(customers_df, "customers")
+def load_data_into_duckdb_with_llm(csv_path: str, table_name: str):
+    print(f"Loading {csv_path} into DuckDB table {table_name} with LLM-inferred datatypes...")
+    df = load_csv_with_llm_dtypes(csv_path, table_name)
+    create_table_with_llm_dtypes(df, table_name)
 
 # -------------------------
-# Utility functions: fetch schemas and sample rows
+# Utility functions: fetch schemas and sample rows from DuckDB
 # -------------------------
 @tracer.chain()
 def get_schemas() -> dict:
-    """Return inferred schema/datatypes for all three dataframes."""
-    global orders_df, employees_df, customers_df
-    return {
-        "orders": {col: str(dtype) for col, dtype in orders_df.dtypes.items()},
-        "employees": {col: str(dtype) for col, dtype in employees_df.dtypes.items()},
-        "customers": {col: str(dtype) for col, dtype in customers_df.dtypes.items()}
-    }
+    """Return inferred schema/datatypes for all tables in DuckDB."""
+    global conn
+    schemas = {}
+    tables_df = conn.execute("SHOW TABLES").fetchdf()
+    for index, row in tables_df.iterrows():
+        table_name = row['name']
+        schema_df = conn.execute(f"DESCRIBE \"{table_name}\"").fetchdf()
+        schemas[table_name] = dict(zip(schema_df['column_name'], schema_df['column_type']))
+    return schemas
 
+@tracer.chain()
 def get_top_rows(n: int = 5) -> dict:
-    """Return top n rows from all three dataframes as list of dicts."""
-    global orders_df, employees_df, customers_df
-    return {
-        "orders": orders_df.head(n).to_dict(orient="records"),
-        "employees": employees_df.head(n).to_dict(orient="records"),
-        "customers": customers_df.head(n).to_dict(orient="records")
-    }
+    """Return top n rows from all tables in DuckDB as a list of dicts."""
+    global conn
+    samples = {}
+    tables_df = conn.execute("SHOW TABLES").fetchdf()
+    for index, row in tables_df.iterrows():
+        table_name = row['name']
+        try:
+            top_rows_df = conn.execute(f'SELECT * FROM "{table_name}" LIMIT {n}').fetchdf()
+            samples[table_name] = top_rows_df.to_dict(orient="records")
+        except duckdb.Error as e:
+            print(f"Error fetching top rows for table {table_name}: {e}")
+            samples[table_name] = []
+    return samples
 
+# -------------------------
+# Reset functions
+# -------------------------
+@tracer.chain()
+def reset_database():
+    """Drops all tables from the DuckDB database."""
+    global conn
+    if conn is None:
+        connect_to_duckdb()
+    
+    tables = conn.execute("SHOW TABLES").fetchall()
+    if not tables:
+        print("No tables to drop.")
+        return
 
+    for table in tables:
+        table_name = table[0]
+        print(f"Dropping table: {table_name}")
+        conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+    print("All tables have been dropped.")
 
-
-### 2. Call LLM with user query, schema and sample data - hugging face LLm Qwen
-
-# from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-#
-# # Load public model
-# tokenizer = AutoTokenizer.from_pretrained("Ellbendls/Qwen-2.5-3b-Text_to_SQL")
-# model = AutoModelForCausalLM.from_pretrained("Ellbendls/Qwen-2.5-3b-Text_to_SQL")
-#
-# # Take user input
-# user_query = "Find the names of all the companies that had their orders shipped to France"
-# #user_query = input("Enter your natural language query: ")
-#
-# # Construct prompt
-# prompt = f"""
-# You are a SQL generation assistant.
-#
-# Schema:
-# {schema_text}
-#
-# Sample Data:
-# {samples_text}
-#
-# User Query:
-# {user_query}
-#
-# Generate the appropriate SQL query to retrieve the requested data.
-# """
-#
-# # Tokenize input and generate output
-# print("\n Tokenizing")
-# inputs = tokenizer(prompt, return_tensors="pt")
-#
-# # Start clock
-# start_time = time.time()
-#
-# print("\n Hang on .. model is Generating")
-# outputs = model.generate(**inputs, max_new_tokens=100)
-#
-# # Stop clock
-# end_time = time.time()
-# elapsed_time = end_time - start_time
-#
-# # Decode and print the generated SQL
-# print("\n Decoding the numbers for you ")
-# generated_sql = tokenizer.decode(outputs[0], skip_special_tokens=True)
-# print("\nGenerated SQL:\n", generated_sql)
-#
-# # Print elapsed time
-# print(f"\nTime taken for generation: {elapsed_time:.2f} seconds")
+def reset_dtype_cache():
+    """Clears the dtype cache from Redis."""
+    redis_client.delete("dtype_cache")
+    print("Dtype cache has been cleared from Redis.")
