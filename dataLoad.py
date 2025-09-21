@@ -14,6 +14,8 @@ from tracing import tracer
 
 from llm_as_a_judge.judgeHandler import judge_response_with_gemini
 
+llm_as_a_judge = os.getenv("LLM_AS_A_JUDGE", "false").lower() in ("true", "1", "yes")
+
 # -------------------------
 # Global variables
 # -------------------------
@@ -56,7 +58,8 @@ def infer_dtypes_from_csv(csv_path: str, table_name: str) -> Dict[str, str]:
 
     llm_response = call_llm_infer_dtypes(prompt)
 
-    judge_response_with_gemini("dtypes", prompt, llm_response)
+    if (llm_as_a_judge):
+        judge_response_with_gemini("dtypes", prompt, llm_response)
 
     return parse_llm_dtype_response(llm_response)
 

@@ -15,6 +15,7 @@ from LLMResponseGenerator import call_llm_analysis_generation
 
 from llm_as_a_judge.judgeHandler import judge_response_with_gemini
 
+llm_as_a_judge = os.getenv("LLM_AS_A_JUDGE", "false").lower() in ("true", "1", "yes")
 
 app = FastAPI()
 
@@ -206,7 +207,8 @@ def process_user_query(user_query: str) -> str:
     
         analysis_response = call_llm_analysis_generation(analysis_prompt)
 
-        judge_response_with_gemini("analysis", analysis_prompt, analysis_response)
+        if (llm_as_a_judge):
+            judge_response_with_gemini("analysis", analysis_prompt, analysis_response)
 
         print("Result Insights: ", analysis_response)
         span2.set_output(value=analysis_response)
