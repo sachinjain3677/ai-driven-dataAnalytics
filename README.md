@@ -6,6 +6,8 @@ A data analytics tool tapping into the capabilities of AI for query generation, 
 ## 1. Update brew
 brew update
 brew install ffmpeg
+brew install redis
+brew services start redis
 ## 2. Install Python, Node, Git
 brew install python@3.11 node git
 ## 3. create virtualenv

@@ -43,7 +43,7 @@ def get_graph_metadata_from_llm(prompt: str) -> dict:
 
 # Plot graph according to result by LLM
 @tracer.chain()
-def plot_graph(df, metadata) -> Figure:
+def plot_graph(df, metadata) -> str:
     """
     Plot a graph using Plotly based on LLM-provided metadata.
 
@@ -107,6 +107,6 @@ def plot_graph(df, metadata) -> Figure:
         print(f"[EXCEPTION] Unsupported graph type: {graph_type}")
         raise ValueError(f"Unsupported graph type: {graph_type}")
 
-    print("[INFO] Plot created successfully, displaying graph")
-    fig.show()
-    return fig
+    chart_json = fig.to_json()
+    print(f"[INFO] Plotly chart JSON generated (length={len(chart_json)} chars)")
+    return chart_json

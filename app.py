@@ -124,16 +124,12 @@ async def generate_sql(request: Request):
         if not user_query:
             raise HTTPException(status_code=400, detail="'query' field is required.")
 
-        graph_path, insights = process_user_query(user_query)
-
-        # Encode the image to Base64
-        with open(graph_path, "rb") as image_file:
-            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+        chart_json, insights = process_user_query(user_query)
 
         return JSONResponse(
             status_code=200,
             content={
-                "graph": encoded_image,
+                "graph": chart_json,
                 "insights": insights
             }
         )
@@ -223,18 +219,14 @@ async def generate_sql_from_audio(audio: UploadFile = File(...)):
         print(f"[INFO] Final transcription: '{transcription.strip()}'")
 
         # Step 5: Process transcription and get results
-        graph_path, insights = process_user_query(transcription)
+        chart_json, insights = process_user_query(transcription)
         print("[INFO] Transcription sent to process_user_query")
-
-        # Encode the image to Base64
-        with open(graph_path, "rb") as image_file:
-            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
 
         return JSONResponse(
             status_code=200,
             content={
                 "transcription": transcription.strip(),
-                "graph": encoded_image,
+                "graph": chart_json,
                 "insights": insights
             }
         )
@@ -299,11 +291,7 @@ def process_user_query(user_query: str) -> tuple[str, str]:
         metadata = get_graph_metadata_from_llm(graph_prompt)
 
         print("\nPlotting graph...")
-        fig = plot_graph(query_results, metadata)
-    
-        # Save the generated graph image locally
-        graph_image_path = "generated_graph.png"
-        fig.write_image(graph_image_path)
+        chart_json = plot_graph(query_results, metadata)
         span1.set_output(value=metadata)
 
     # Store query result in vectorDB
@@ -342,4 +330,4 @@ def process_user_query(user_query: str) -> tuple[str, str]:
     
         handler.clear_collection("query_results_collection")
     
-        return(graph_image_path, analysis_response)
+        return(chart_json, analysis_response)
