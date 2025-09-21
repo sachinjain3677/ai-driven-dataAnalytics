@@ -2,9 +2,24 @@
 __pycache__/
 *.py[codz]
 *$py.class
-
-# C extensions
-*.so
+*.bin
+*.conf
+*.xml
+*.fst
+*.mat
+*.ie
+*.dubm
+*.int
+*.stats
+*.log
+vosk-model-small-en-us-0.15/
+*.sqlite3
+.oca/
+setenv.sh
+*.png
+.DS_Store
+*.m4a
+*.duckdb
 
 # Distribution / packaging
 .Python
