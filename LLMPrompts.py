@@ -64,20 +64,19 @@ def create_graph_prompt(schema_text: str, samples_text: str, user_query: str) ->
 
         User query: "{user_query}"
 
-        Instructions for selecting a graph type:
-        - **Line Chart**: Choose for showing trends over a continuous variable, especially time-series data.
-        - **Bar Chart**: Choose for comparing values across different categories.
-        - **Pie Chart**: Choose for representing parts of a whole. Best for a small number of categories (less than 6).
-        - **Scatter Plot**: Choose for exploring the relationship between two numerical variables.
-        - **Histogram**: Choose for understanding the distribution of a single numerical variable.
-        - If the user explicitly requests a graph type, prioritize their choice.
+        Instructions:
+        1.  Analyze the user query to understand the desired analysis (e.g., total, average, distribution).
+        2.  Examine the Schema to identify the available categorical and numerical columns.
+        3.  Select the best `graph_type` to answer the query. A "Bar" chart is best for comparing a numerical value across categories. A "Histogram" is for viewing the distribution of a single number.
+        4.  Select the `x` and `y` columns. `x` is typically the category, and `y` is the number.
 
         STRICT Response Format:
         - Respond ONLY with a single, valid JSON object.
         - The JSON must contain these exact keys: `graph_type`, `x`, `y`, `title`.
         - `graph_type` must be one of: "Line", "Bar", "Pie", "Scatter", "Histogram".
-        - `x` and `y` must be valid column names from the provided schema.
-        - `y` can be `null` only if the `graph_type` is "Histogram".
+        - `x` and `y` must be valid column names from the provided Schema.
+        - **Crucially, if `graph_type` is "Bar", "Line", "Scatter", or "Pie", the `y` value MUST be a numerical column from the schema. It cannot be null or a categorical column.**
+        - `y` can ONLY be `null` if the `graph_type` is "Histogram".
         - `title` should be a descriptive title for the chart.
         - Do not include any explanations, comments, or markdown.
 
