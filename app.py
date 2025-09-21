@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, File, UploadFile, HTTPException
+from fastapi.responses import JSONResponse
 from io import BytesIO
 import subprocess
 import json
@@ -46,70 +47,105 @@ async def startup_event():
 @app.post("/upload_csv")
 @tracer.tool()
 async def upload_csv(file: UploadFile = File(...)):
-    upload_folder = "uploads"
-    if not os.path.exists(upload_folder):
-        os.makedirs(upload_folder)
+    try:
+        upload_folder = "uploads"
+        if not os.path.exists(upload_folder):
+            os.makedirs(upload_folder)
 
-    file_path = os.path.join(upload_folder, file.filename)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        file_path = os.path.join(upload_folder, file.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-    table_name = os.path.splitext(file.filename)[0]
-    load_data_into_duckdb_with_llm(file_path, table_name)
+        table_name = os.path.splitext(file.filename)[0]
+        load_data_into_duckdb_with_llm(file_path, table_name)
 
-    # Get schema and samples
-    schema_text = get_schemas()
-    samples_text = get_top_rows()
+        # Get schema and samples
+        schema_text = get_schemas()
+        samples_text = get_top_rows()
 
-    # Store in Redis, using the custom serializer for datetime objects
-    redis_client.set("schema_text", json.dumps(schema_text, default=json_serial))
-    redis_client.set("samples_text", json.dumps(samples_text, default=json_serial))
+        # Store in Redis, using the custom serializer for datetime objects
+        redis_client.set("schema_text", json.dumps(schema_text, default=json_serial))
+        redis_client.set("samples_text", json.dumps(samples_text, default=json_serial))
 
-    return {"message": f"File '{file.filename}' uploaded and processed successfully."}
+        return JSONResponse(
+            status_code=200,
+            content={"message": f"File '{file.filename}' uploaded and processed successfully."}
+        )
+    except Exception as e:
+        print(f"[ERROR] /upload_csv failed: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"An unexpected error occurred during file upload: {str(e)}"}
+        )
 
 @app.post("/reset")
 @tracer.tool()
 async def reset_state():
     """Resets the application state by clearing the database and uploaded files."""
-    print("Resetting application state...")
+    try:
+        print("Resetting application state...")
 
-    # 1. Clear the DuckDB database
-    reset_database()
+        # 1. Clear the DuckDB database
+        reset_database()
 
-    # 2. Clear the in-memory dtype cache
-    reset_dtype_cache()
+        # 2. Clear the dtype cache from Redis
+        reset_dtype_cache()
 
-    # 3. Clear the state in Redis
-    redis_client.delete("schema_text", "samples_text")
-    print("State cleared from Redis.")
+        # 3. Clear the state in Redis
+        redis_client.delete("schema_text", "samples_text")
+        print("State cleared from Redis.")
 
-    # 4. Clear the uploads directory
-    upload_folder = "uploads"
-    if os.path.exists(upload_folder):
-        shutil.rmtree(upload_folder)
-        print(f"'{upload_folder}' directory has been removed.")
-    os.makedirs(upload_folder)
-    print(f"'{upload_folder}' directory has been recreated.")
+        # 4. Clear the uploads directory
+        upload_folder = "uploads"
+        if os.path.exists(upload_folder):
+            shutil.rmtree(upload_folder)
+            print(f"'{upload_folder}' directory has been removed.")
+        os.makedirs(upload_folder)
+        print(f"'{upload_folder}' directory has been recreated.")
 
-    print("Application state has been successfully reset.")
-    return {"message": "Application state has been successfully reset."}
+        print("Application state has been successfully reset.")
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Application state has been successfully reset."}
+        )
+    except Exception as e:
+        print(f"[ERROR] /reset failed: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"An unexpected error occurred during reset: {str(e)}"}
+        )
 
 @app.post("/generate_sql")
 @tracer.tool()
 async def generate_sql(request: Request):
-    body = await request.json()
-    user_query = body.get("query")  # Natural language query
-    graph_path, insights = process_user_query(user_query)
-    print("\nTranscription sent to process_user_query")
+    try:
+        body = await request.json()
+        user_query = body.get("query")
+        if not user_query:
+            raise HTTPException(status_code=400, detail="'query' field is required.")
 
-    # Encode the image to Base64
-    with open(graph_path, "rb") as image_file:
-        encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+        graph_path, insights = process_user_query(user_query)
 
-    return {
-        "graph": encoded_image,
-        "insights": insights
-    }
+        # Encode the image to Base64
+        with open(graph_path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "graph": encoded_image,
+                "insights": insights
+            }
+        )
+    except HTTPException as e:
+        # Re-raise HTTPException to let FastAPI handle it
+        raise e
+    except Exception as e:
+        print(f"[ERROR] /generate_sql failed: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"An unexpected error occurred while processing your query: {str(e)}"}
+        )
 
 
 # Converts any audio file to wav which can be further processed to text by speech-to-text llm
@@ -194,27 +230,38 @@ async def generate_sql_from_audio(audio: UploadFile = File(...)):
         with open(graph_path, "rb") as image_file:
             encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
 
-        return {
-            "transcription": transcription.strip(),
-            "graph": encoded_image,
-            "insights": insights
-        }
-
+        return JSONResponse(
+            status_code=200,
+            content={
+                "transcription": transcription.strip(),
+                "graph": encoded_image,
+                "insights": insights
+            }
+        )
+    except HTTPException as e:
+        # Re-raise HTTPException to let FastAPI handle it
+        raise e
     except Exception as e:
-        print(f"[EXCEPTION] Error in generate_sql_from_audio: {type(e).__name__}: {e}")
-        return {"error": str(e)}
+        print(f"[ERROR] /generate_sql_from_audio failed: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"An unexpected error occurred while processing the audio: {str(e)}"}
+        )
 
 # Processing of received user query to fetch data and plot graph
 def process_user_query(user_query: str) -> tuple[str, str]:
     print("\nBuilding SQL generation prompt...")
     
     # Retrieve data from Redis
-    schema_text_json = redis_client.get("schema_text")
-    samples_text_json = redis_client.get("samples_text")
+    try:
+        schema_text_json = redis_client.get("schema_text")
+        samples_text_json = redis_client.get("samples_text")
+    except redis.exceptions.ConnectionError as e:
+        print(f"[ERROR] Redis connection failed: {e}")
+        raise HTTPException(status_code=503, detail="Could not connect to the data store. Please try again later.")
 
     if not schema_text_json or not samples_text_json:
-        # This is a fallback, ideally the client should handle this state
-        raise HTTPException(status_code=400, detail="No data has been uploaded. Please upload a CSV first.")
+        raise HTTPException(status_code=400, detail="No data has been uploaded. Please upload a CSV file first.")
 
     schema_text = json.loads(schema_text_json)
     samples_text = json.loads(samples_text_json)

@@ -188,8 +188,11 @@ def get_schemas() -> dict:
     tables_df = conn.execute("SHOW TABLES").fetchdf()
     for index, row in tables_df.iterrows():
         table_name = row['name']
-        schema_df = conn.execute(f"DESCRIBE \"{table_name}\"").fetchdf()
-        schemas[table_name] = dict(zip(schema_df['column_name'], schema_df['column_type']))
+        try:
+            schema_df = conn.execute(f"DESCRIBE \"{table_name}\"").fetchdf()
+            schemas[table_name] = dict(zip(schema_df['column_name'], schema_df['column_type']))
+        except duckdb.Error as e:
+            print(f"[ERROR] Failed to get schema for table {table_name}: {e}")
     return schemas
 
 @tracer.chain()
@@ -204,7 +207,7 @@ def get_top_rows(n: int = 5) -> dict:
             top_rows_df = conn.execute(f'SELECT * FROM "{table_name}" LIMIT {n}').fetchdf()
             samples[table_name] = top_rows_df.to_dict(orient="records")
         except duckdb.Error as e:
-            print(f"Error fetching top rows for table {table_name}: {e}")
+            print(f"[ERROR] Error fetching top rows for table {table_name}: {e}")
             samples[table_name] = []
     return samples
 
@@ -225,8 +228,11 @@ def reset_database():
 
     for table in tables:
         table_name = table[0]
-        print(f"Dropping table: {table_name}")
-        conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        try:
+            print(f"Dropping table: {table_name}")
+            conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        except duckdb.Error as e:
+            print(f"[ERROR] Failed to drop table {table_name}: {e}")
     print("All tables have been dropped.")
 
 def reset_dtype_cache():
